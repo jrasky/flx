@@ -67,6 +67,7 @@ impl PartialEq for LineMatch {
 
 impl Eq for LineMatch {}
 
+/// Creates a LineInfo object with a factor of zero
 impl<T: Into<String>> From<T> for LineInfo {
     fn from(item: T) -> LineInfo {
         LineInfo::new(item, 0.0)
