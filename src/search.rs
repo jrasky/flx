@@ -11,11 +11,13 @@ use std::sync::Arc;
 
 use constants::*;
 
+/// Contains the searchable database
 #[derive(Debug)]
 pub struct SearchBase {
     lines: Vec<LineInfo>
 }
 
+/// Parsed information about a line, ready to be searched by a SearchBase.
 #[derive(Debug)]
 pub struct LineInfo {
     line: Arc<String>,
@@ -65,25 +67,32 @@ impl PartialEq for LineMatch {
 
 impl Eq for LineMatch {}
 
-impl<V: Into<String>> FromIterator<V> for SearchBase {
-    fn from_iter<T: IntoIterator<Item=V>>(iterator: T) -> SearchBase {
-        let mut count = 0.0;
-        SearchBase::from_iter(iterator.into_iter().map(|item| {
-            let info = LineInfo::new(item, count);
-            count += 1.0;
-            info}))
+impl<T: Into<String>> From<T> for LineInfo {
+    fn from(item: T) -> LineInfo {
+        LineInfo::new(item, 0.0)
     }
 }
 
-impl FromIterator<LineInfo> for SearchBase {
-    fn from_iter<T: IntoIterator<Item=LineInfo>>(iterator: T) -> SearchBase {
-        SearchBase {
-            lines: iterator.into_iter().collect()
-        }
+impl<V: Into<LineInfo>> FromIterator<V> for SearchBase {
+    fn from_iter<T: IntoIterator<Item=V>>(iterator: T) -> SearchBase {
+        SearchBase::new(iterator.into_iter().map(|item| item.into()).collect())
     }
 }
 
 impl SearchBase {
+    /// Construct a new SearchBase from a Vec of LineInfos.
+    pub fn new(lines: Vec<LineInfo>) -> SearchBase {
+        SearchBase{
+            lines: lines
+        }
+    }
+
+    /// Perform a query of the SearchBase.
+    ///
+    /// number limits the number of matches returned.
+    ///
+    /// Matches any supersequence of the given query, with heuristics to order
+    /// matches based on how close they are to the given query.
     pub fn query<T: AsRef<str>>(&self, query: T, number: usize)
                                 -> Vec<Arc<String>> {
         if query.as_ref().is_empty() {
@@ -123,6 +132,11 @@ impl SearchBase {
 }
 
 impl LineInfo {
+    /// Constructs a new LineInfo objects from the given item.
+    ///
+    /// Factor is a "tie-breaker," or something to weight the matches in a way
+    /// beyond the matching already done in flx. The greater the factor, the
+    /// more greatly matching favors the item.
     pub fn new<T: Into<String>>(item: T, factor: f32) -> LineInfo {
         let mut map: HashMap<char, Vec<usize>> = HashMap::new();
         let mut heat = vec![];
