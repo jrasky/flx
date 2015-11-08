@@ -290,7 +290,7 @@ impl LineInfo {
             avg_dist = position.windows(2).map(|pair| {
                 trace!("Window: {:?}", pair);
                 pair[0] as f32 - pair[1] as f32
-            }).sum::<f32>();
+            }).sum::<f32>() / position.len() as f32;
         }
 
         let heat_sum: f32 = position.iter()
