@@ -14,8 +14,8 @@ pub struct SearchBase {
 pub struct LineInfo {
     line: Arc<String>,
     char_map: HashMap<char, Vec<usize>>,
-    heat_map: Vec<isize>,
-    factor: isize
+    heat_map: Vec<f32>,
+    factor: f32
 }
 
 #[derive(PartialEq, Eq)]
@@ -29,16 +29,18 @@ enum CharClass {
 
 #[derive(Debug)]
 struct LineMatch {
-    score: isize,
-    factor: isize,
+    score: f32,
+    factor: f32,
     line: Arc<String>
 }
 
 impl Ord for LineMatch {
     fn cmp(&self, other: &LineMatch) -> Ordering {
-        match self.score.cmp(&other.score) {
-            Ordering::Equal => self.factor.cmp(&other.factor),
-            order => order
+        match self.score.partial_cmp(&other.score) {
+            Some(Ordering::Equal) | None =>
+                self.factor.partial_cmp(&other.factor)
+                .unwrap_or(Ordering::Equal),
+            Some(order) => order
         }
     }
 }
@@ -59,10 +61,10 @@ impl Eq for LineMatch {}
 
 impl<V: Into<String>> FromIterator<V> for SearchBase {
     fn from_iter<T: IntoIterator<Item=V>>(iterator: T) -> SearchBase {
-        let mut count = 0;
+        let mut count = 0.0;
         SearchBase::from_iter(iterator.into_iter().map(|item| {
             let info = LineInfo::new(item, count);
-            count += 1;
+            count += 1.0;
             info}))
     }
 }
@@ -76,13 +78,15 @@ impl FromIterator<LineInfo> for SearchBase {
 }
 
 impl SearchBase {
-    pub fn query<T: AsRef<str>>(&self, query: T, number: usize) -> Vec<Arc<String>> {
+    pub fn query<T: AsRef<str>>(&self, query: T, number: usize)
+                                -> Vec<Arc<String>> {
         if query.as_ref().is_empty() {
             // an empty query means don't match anything
             return vec![];
         }
 
-        let mut matches: BinaryHeap<LineMatch> = BinaryHeap::with_capacity(number);
+        let mut matches: BinaryHeap<LineMatch> =
+            BinaryHeap::with_capacity(number);
 
         for item in self.lines.iter() {
             let score = match item.score(&query) {
@@ -113,13 +117,13 @@ impl SearchBase {
 }
 
 impl LineInfo {
-    pub fn new<T: Into<String>>(item: T, factor: isize) -> LineInfo {
+    pub fn new<T: Into<String>>(item: T, factor: f32) -> LineInfo {
         let mut map: HashMap<char, Vec<usize>> = HashMap::new();
         let mut heat = vec![];
         let line = Arc::new(item.into());
 
-        let mut ws_score = 0isize;
-        let mut cs_score = 0isize;
+        let mut ws_score: f32 = 0.0;
+        let mut cs_score: f32 = 0.0;
         let mut cur_class = CharClass::First;
         let mut cs_change = false;
 
@@ -143,7 +147,7 @@ impl LineInfo {
                     if !cs_change {
                         cs_score += CLASS_FACTOR;
                         cs_change = true;
-                    } 
+                    }
                 } else {
                     cs_change = false;
                 }
@@ -180,9 +184,9 @@ impl LineInfo {
 
             heat.push(ws_score + cs_score);
 
-            ws_score /= WHITESPACE_REDUCE;
+            ws_score *= WHITESPACE_REDUCE;
             if !cs_change {
-                cs_score /= CLASS_REDUCE;
+                cs_score *= CLASS_REDUCE;
             }
         }
 
@@ -194,14 +198,17 @@ impl LineInfo {
         }
     }
 
-    fn get_positions(&self, item: char, after: Option<usize>) -> Option<Vec<usize>> {
+    fn get_positions(&self, item: char, after: Option<usize>)
+                     -> Option<Vec<usize>> {
         match after {
             None => self.char_map.get(&item).map(|list| {list.to_vec()}),
             Some(after) => {
                 self.char_map.get(&item).and_then(|list| {
                     match list.binary_search(&after) {
-                        Ok(idx) if idx + 1 < list.len() => Some(list[idx + 1..].to_vec()),
-                        Err(idx) if idx < list.len() => Some(list[idx..].to_vec()),
+                        Ok(idx) if idx + 1 < list.len() =>
+                            Some(list[idx + 1..].to_vec()),
+                        Err(idx) if idx < list.len() =>
+                            Some(list[idx..].to_vec()),
                         _ => None
                     }
                 })
@@ -266,30 +273,36 @@ impl LineInfo {
         }
     }
 
-    fn score_position(&self, position: Vec<usize>) -> isize {
-        let avg_dist: usize;
+    fn score_position(&self, position: Vec<usize>) -> f32 {
+        let avg_dist: f32;
 
         trace!("Scoring position: {:?}", position);
 
         if position.len() < 2 {
-            avg_dist = 0;
+            avg_dist = 0.0;
         } else {
             avg_dist = position.windows(2).map(|pair| {
                 trace!("Window: {:?}", pair);
-                pair[0] - pair[1]
-            }).sum::<usize>() / position.len();
+                pair[0] as f32 - pair[1] as f32
+            }).sum::<f32>();
         }
 
-        let heat_sum: isize = position.iter().map(|idx| {self.heat_map[*idx]}).sum();
+        let heat_sum: f32 = position.iter()
+            .map(|idx| {self.heat_map[*idx]}).sum();
 
-        avg_dist as isize * DIST_WEIGHT + heat_sum * HEAT_WEIGHT + self.factor / FACTOR_REDUCE
+        avg_dist  * DIST_WEIGHT + heat_sum
+            * HEAT_WEIGHT + self.factor * FACTOR_REDUCE
     }
 
-    fn best_position(&self, positions: Vec<Vec<usize>>) -> Option<isize> {
-        positions.into_iter().map(|position| {self.score_position(position)}).max()
+    fn best_position(&self, positions: Vec<Vec<usize>>) -> Option<f32> {
+        let mut scores = positions.into_iter()
+            .map(|position| {self.score_position(position)});
+
+        scores.next()
+            .map(|score| scores.fold(score, |acc, item| item.max(acc)))
     }
 
-    fn score<T: AsRef<str>>(&self, query: T) -> Option<isize> {
+    fn score<T: AsRef<str>>(&self, query: T) -> Option<f32> {
         self.position_list(query)
             .and_then(|positions| {LineInfo::permute_positions(positions)})
             .and_then(|positions| {self.best_position(positions)})
