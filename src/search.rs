@@ -295,3 +295,41 @@ impl LineInfo {
             .and_then(|positions| {self.best_position(positions)})
     }
 }
+
+#[test]
+fn test_matches() {
+    // create a simple search set
+    let test_strings = vec!["test1", "test2", "test3"];
+    let base = SearchBase::from_iter(test_strings);
+
+    // search for something deinitely not in it
+    let result = base.query("abc", 1);
+
+    assert!(result.is_empty());
+}
+
+#[test]
+fn test_simple_matches() {
+    // create a simple search set
+    let test_strings = vec!["test", "hello", "hello2"];
+    let base = SearchBase::from_iter(test_strings);
+
+    // search
+    let result = base.query("hello", 3);
+
+    assert!(result.contains(&Arc::new("hello".into())));
+    assert!(result.contains(&Arc::new("hello2".into())));
+    assert!(!result.contains(&Arc::new("test".into())));
+}
+
+#[test]
+fn test_truncate() {
+    let test_strings = vec!["test", "toast"];
+    let base = SearchBase::from_iter(test_strings);
+
+    // tt matches test more closely than toast
+    let result = base.query("tt", 1);
+
+    assert_eq!(result.len(), 1);
+    assert!(result.contains(&Arc::new("test".into())));
+}
