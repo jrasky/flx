@@ -9,6 +9,8 @@ use std::cmp::Ordering;
 use std::iter::FromIterator;
 use std::sync::Arc;
 
+use unicode_normalization::UnicodeNormalization;
+
 use constants::*;
 
 /// Contains the searchable database
@@ -148,7 +150,7 @@ impl LineInfo {
         let mut cur_class = CharClass::First;
         let mut cs_change = false;
 
-        for (idx, c) in line.chars().enumerate() {
+        for (idx, c) in line.as_ref().nfkd().enumerate() {
             if idx > MAX_LEN {
                 break;
             }
