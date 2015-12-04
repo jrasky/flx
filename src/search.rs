@@ -150,7 +150,7 @@ impl LineInfo {
         let mut cur_class = CharClass::First;
         let mut cs_change = false;
 
-        for (idx, c) in line.as_ref().nfkd().enumerate() {
+        for (idx, c) in line.as_ref().nfc().enumerate() {
             if idx > MAX_LEN {
                 break;
             }
@@ -243,7 +243,7 @@ impl LineInfo {
         let mut positions = vec![];
         let mut last = None;
 
-        for c in item.as_ref().chars() {
+        for c in item.as_ref().nfc() {
             if c.is_whitespace() {
                 // don't match whitespace
                 continue;
