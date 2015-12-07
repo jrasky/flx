@@ -6,10 +6,13 @@
 // copied, modified, or distributed except according to those terms.
 #![feature(binary_heap_extras)]
 #![feature(iter_arith)]
+#![cfg_attr(test, feature(test))]
 #[macro_use]
 extern crate log;
 extern crate env_logger;
 extern crate unicode_normalization;
+#[cfg(test)] extern crate rand;
+#[cfg(test)] extern crate test;
 
 mod constants;
 mod search;

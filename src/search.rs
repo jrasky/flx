@@ -332,40 +332,72 @@ impl LineInfo {
     }
 }
 
-#[test]
-fn test_matches() {
-    // create a simple search set
-    let test_strings = vec!["test1", "test2", "test3"];
-    let base = SearchBase::from_iter(test_strings);
+#[cfg(test)]
+mod tests {
+    use std::iter::FromIterator;
+    use std::sync::Arc;
 
-    // search for something deinitely not in it
-    let result = base.query("abc", 1);
+    use ::rand::Rng;
 
-    assert!(result.is_empty());
-}
+    use ::rand;
+    use ::test;
 
-#[test]
-fn test_simple_matches() {
-    // create a simple search set
-    let test_strings = vec!["test", "hello", "hello2"];
-    let base = SearchBase::from_iter(test_strings);
+    use super::*;
 
-    // search
-    let result = base.query("hello", 3);
+    #[test]
+    fn test_matches() {
+        // create a simple search set
+        let test_strings = vec!["test1", "test2", "test3"];
+        let base = SearchBase::from_iter(test_strings);
 
-    assert!(result.contains(&Arc::new("hello".into())));
-    assert!(result.contains(&Arc::new("hello2".into())));
-    assert!(!result.contains(&Arc::new("test".into())));
-}
+        // search for something deinitely not in it
+        let result = base.query("abc", 1);
 
-#[test]
-fn test_truncate() {
-    let test_strings = vec!["test", "toast"];
-    let base = SearchBase::from_iter(test_strings);
+        assert!(result.is_empty());
+    }
 
-    // tt matches test more closely than toast
-    let result = base.query("tt", 1);
+    #[test]
+    fn test_simple_matches() {
+        // create a simple search set
+        let test_strings = vec!["test", "hello", "hello2"];
+        let base = SearchBase::from_iter(test_strings);
 
-    assert_eq!(result.len(), 1);
-    assert!(result.contains(&Arc::new("test".into())));
+        // search
+        let result = base.query("hello", 3);
+
+        assert!(result.contains(&Arc::new("hello".into())));
+        assert!(result.contains(&Arc::new("hello2".into())));
+        assert!(!result.contains(&Arc::new("test".into())));
+    }
+
+    #[test]
+    fn test_truncate() {
+        let test_strings = vec!["test", "toast"];
+        let base = SearchBase::from_iter(test_strings);
+
+        // tt matches test more closely than toast
+        let result = base.query("tt", 1);
+
+        assert_eq!(result.len(), 1);
+        assert!(result.contains(&Arc::new("test".into())));
+    }
+
+    #[bench]
+    fn bench_search(b: &mut test::Bencher) {
+        let mut rng = rand::thread_rng();
+
+        let test_strings = vec!["touaoeuaoeeaoeuaoeuaoeusaoeuaoeuaoeuoeautaoeuaoeuaoeu",
+                                "aoeuaoeuhaoeuaoeuaoeueaoeuaoeuaoeulaoeuaoeuaoeuloaeuoaeuoeauooeaua",
+                                "aoeuaoeuahoeuaouaoeuoaeeuaoeuoaeuaoeulaoeuoaeuaoeulaoeuaoeuaoeuoaoeuoaeuaoeu2aoeuoae"];
+        let mut test_set = Vec::with_capacity(100000);
+
+        for _ in 0..100000 {
+            let num = rng.gen::<usize>() % test_strings.len();
+            test_set.push(test_strings[num].clone());
+        }
+
+        let base = SearchBase::from_iter(test_set);
+
+        b.iter(|| base.query("hello", 10));
+    }
 }
