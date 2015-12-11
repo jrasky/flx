@@ -11,8 +11,10 @@
 extern crate log;
 extern crate env_logger;
 extern crate unicode_normalization;
-#[cfg(test)] extern crate rand;
-#[cfg(test)] extern crate test;
+#[cfg(test)]
+extern crate rand;
+#[cfg(test)]
+extern crate test;
 
 mod constants;
 mod search;

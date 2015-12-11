@@ -16,7 +16,7 @@ use constants::*;
 /// Contains the searchable database
 #[derive(Debug)]
 pub struct SearchBase {
-    lines: Vec<LineInfo>
+    lines: Vec<LineInfo>,
 }
 
 /// Parsed information about a line, ready to be searched by a SearchBase.
@@ -25,7 +25,7 @@ pub struct LineInfo {
     line: Arc<String>,
     char_map: HashMap<char, Vec<usize>>,
     heat_map: Vec<f32>,
-    factor: f32
+    factor: f32,
 }
 
 #[derive(PartialEq, Eq)]
@@ -34,23 +34,25 @@ enum CharClass {
     Numeric,
     Alphabetic,
     First,
-    Other
+    Other,
 }
 
 #[derive(Debug)]
 struct LineMatch {
     score: f32,
     factor: f32,
-    line: Arc<String>
+    line: Arc<String>,
 }
 
 impl Ord for LineMatch {
     fn cmp(&self, other: &LineMatch) -> Ordering {
         match self.score.partial_cmp(&other.score) {
-            Some(Ordering::Equal) | None =>
-                self.factor.partial_cmp(&other.factor)
-                .unwrap_or(Ordering::Equal),
-            Some(order) => order
+            Some(Ordering::Equal) | None => {
+                self.factor
+                    .partial_cmp(&other.factor)
+                    .unwrap_or(Ordering::Equal)
+            }
+            Some(order) => order,
         }
     }
 }
@@ -77,7 +79,7 @@ impl<T: Into<String>> From<T> for LineInfo {
 }
 
 impl<V: Into<LineInfo>> FromIterator<V> for SearchBase {
-    fn from_iter<T: IntoIterator<Item=V>>(iterator: T) -> SearchBase {
+    fn from_iter<T: IntoIterator<Item = V>>(iterator: T) -> SearchBase {
         SearchBase::new(iterator.into_iter().map(|item| item.into()).collect())
     }
 }
@@ -85,9 +87,7 @@ impl<V: Into<LineInfo>> FromIterator<V> for SearchBase {
 impl SearchBase {
     /// Construct a new SearchBase from a Vec of LineInfos.
     pub fn new(lines: Vec<LineInfo>) -> SearchBase {
-        SearchBase{
-            lines: lines
-        }
+        SearchBase { lines: lines }
     }
 
     /// Perform a query of the SearchBase.
@@ -96,31 +96,27 @@ impl SearchBase {
     ///
     /// Matches any supersequence of the given query, with heuristics to order
     /// matches based on how close they are to the given query.
-    pub fn query<T: AsRef<str>>(&self, query: T, number: usize)
-                                -> Vec<Arc<String>> {
+    pub fn query<T: AsRef<str>>(&self, query: T, number: usize) -> Vec<Arc<String>> {
         if query.as_ref().is_empty() {
             // an empty query means don't match anything
             return vec![];
         }
 
-        let mut matches: BinaryHeap<LineMatch> =
-            BinaryHeap::with_capacity(number);
+        let mut matches: BinaryHeap<LineMatch> = BinaryHeap::with_capacity(number);
 
         for item in self.lines.iter() {
             let score = match item.score(&query) {
                 None => {
                     // non-matching line
                     continue;
-                },
-                Some(score) => {
-                    score
                 }
+                Some(score) => score,
             };
 
             let match_item = LineMatch {
                 score: -score,
                 factor: -item.factor,
-                line: item.line.clone()
+                line: item.line.clone(),
             };
 
             if matches.len() < number {
@@ -130,7 +126,7 @@ impl SearchBase {
             }
         }
 
-        matches.into_sorted_vec().into_iter().map(|x| {x.line}).collect()
+        matches.into_sorted_vec().into_iter().map(|x| x.line).collect()
     }
 }
 
@@ -182,7 +178,7 @@ impl LineInfo {
                         cs_change = true;
                     }
                 } else {
-                    cs_change =  false;
+                    cs_change = false;
                 }
             } else {
                 if cur_class != CharClass::Other {
@@ -217,22 +213,19 @@ impl LineInfo {
             line: line,
             char_map: map,
             heat_map: heat,
-            factor: factor
+            factor: factor,
         }
     }
 
-    fn get_positions(&self, item: char, after: Option<usize>)
-                     -> Option<Vec<usize>> {
+    fn get_positions(&self, item: char, after: Option<usize>) -> Option<Vec<usize>> {
         match after {
-            None => self.char_map.get(&item).map(|list| {list.to_vec()}),
+            None => self.char_map.get(&item).map(|list| list.to_vec()),
             Some(after) => {
                 self.char_map.get(&item).and_then(|list| {
                     match list.binary_search(&after) {
-                        Ok(idx) if idx + 1 < list.len() =>
-                            Some(list[idx + 1..].to_vec()),
-                        Err(idx) if idx < list.len() =>
-                            Some(list[idx..].to_vec()),
-                        _ => None
+                        Ok(idx) if idx + 1 < list.len() => Some(list[idx + 1..].to_vec()),
+                        Err(idx) if idx < list.len() => Some(list[idx..].to_vec()),
+                        _ => None,
                     }
                 })
             }
@@ -254,7 +247,7 @@ impl LineInfo {
                 Some(list) => {
                     last = match list.get(0) {
                         None => return None,
-                        Some(idx) => Some(*idx)
+                        Some(idx) => Some(*idx),
                     };
                     positions.push(list);
                 }
@@ -304,31 +297,33 @@ impl LineInfo {
         if position.len() < 2 {
             avg_dist = 0.0;
         } else {
-            avg_dist = position.windows(2).map(|pair| {
-                trace!("Window: {:?}", pair);
-                pair[0] as f32 - pair[1] as f32
-            }).sum::<f32>() / position.len() as f32;
+            avg_dist = position.windows(2)
+                               .map(|pair| {
+                                   trace!("Window: {:?}", pair);
+                                   pair[0] as f32 - pair[1] as f32
+                               })
+                               .sum::<f32>() / position.len() as f32;
         }
 
         let heat_sum: f32 = position.iter()
-            .map(|idx| {self.heat_map[*idx]}).sum();
+                                    .map(|idx| self.heat_map[*idx])
+                                    .sum();
 
-        avg_dist  * DIST_WEIGHT + heat_sum
-            * HEAT_WEIGHT + self.factor * FACTOR_REDUCE
+        avg_dist * DIST_WEIGHT + heat_sum * HEAT_WEIGHT + self.factor * FACTOR_REDUCE
     }
 
     fn best_position(&self, positions: Vec<Vec<usize>>) -> Option<f32> {
         let mut scores = positions.into_iter()
-            .map(|position| {self.score_position(position)});
+                                  .map(|position| self.score_position(position));
 
         scores.next()
-            .map(|score| scores.fold(score, |acc, item| item.max(acc)))
+              .map(|score| scores.fold(score, |acc, item| item.max(acc)))
     }
 
     fn score<T: AsRef<str>>(&self, query: T) -> Option<f32> {
         self.position_list(query)
-            .and_then(|positions| {LineInfo::permute_positions(positions)})
-            .and_then(|positions| {self.best_position(positions)})
+            .and_then(|positions| LineInfo::permute_positions(positions))
+            .and_then(|positions| self.best_position(positions))
     }
 }
 
@@ -337,10 +332,10 @@ mod tests {
     use std::iter::FromIterator;
     use std::sync::Arc;
 
-    use ::rand::Rng;
+    use rand::Rng;
 
-    use ::rand;
-    use ::test;
+    use rand;
+    use test;
 
     use super::*;
 
@@ -387,8 +382,10 @@ mod tests {
         let mut rng = rand::thread_rng();
 
         let test_strings = vec!["touaoeuaoeeaoeuaoeuaoeusaoeuaoeuaoeuoeautaoeuaoeuaoeu",
-                                "aoeuaoeuhaoeuaoeuaoeueaoeuaoeuaoeulaoeuaoeuaoeuloaeuoaeuoeauooeaua",
-                                "aoeuaoeuahoeuaouaoeuoaeeuaoeuoaeuaoeulaoeuoaeuaoeulaoeuaoeuaoeuoaoeuoaeuaoeu2aoeuoae"];
+                                "aoeuaoeuhaoeuaoeuaoeueaoeuaoeuaoeulaoeuaoeuaoeuloaeuoaeuoeauooea\
+                                 ua",
+                                "aoeuaoeuahoeuaouaoeuoaeeuaoeuoaeuaoeulaoeuoaeuaoeulaoeuaoeuaoeuo\
+                                 aoeuoaeuaoeu2aoeuoae"];
         let mut test_set = Vec::with_capacity(100000);
 
         for _ in 0..100000 {
