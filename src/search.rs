@@ -8,15 +8,22 @@ use std::collections::{HashMap, BinaryHeap};
 use std::cmp::Ordering;
 use std::iter::FromIterator;
 use std::sync::Arc;
+use std::cell::RefCell;
+use std::borrow::BorrowMut;
 
 use unicode_normalization::UnicodeNormalization;
 
+use std::mem;
+
 use constants::*;
+
+// thread-local scratch area
+thread_local!(static SCRATCH: RefCell<Option<SearchScratch>> = RefCell::new(None));
 
 /// Contains the searchable database
 #[derive(Debug)]
 pub struct SearchBase {
-    lines: Vec<LineInfo>,
+    lines: Vec<LineInfo>
 }
 
 /// Parsed information about a line, ready to be searched by a SearchBase.
@@ -42,6 +49,13 @@ struct LineMatch {
     score: f32,
     factor: f32,
     line: Arc<String>,
+}
+
+#[derive(Debug)]
+struct SearchScratch {
+    position: Vec<usize>,
+    state: Vec<usize>,
+    lists: Vec<&'static Vec<usize>>
 }
 
 impl Ord for LineMatch {
@@ -84,10 +98,22 @@ impl<V: Into<LineInfo>> FromIterator<V> for SearchBase {
     }
 }
 
+impl SearchScratch {
+    fn new(size: usize) -> SearchScratch {
+        SearchScratch {
+            position: vec![0; size],
+            state: vec![0; size],
+            lists: Vec::with_capacity(size)
+        }
+    }
+}
+
 impl SearchBase {
     /// Construct a new SearchBase from a Vec of LineInfos.
     pub fn new(lines: Vec<LineInfo>) -> SearchBase {
-        SearchBase { lines: lines }
+        SearchBase { 
+            lines: lines
+        }
     }
 
     /// Perform a query of the SearchBase.
@@ -103,6 +129,10 @@ impl SearchBase {
         }
 
         let mut matches: BinaryHeap<LineMatch> = BinaryHeap::with_capacity(number);
+
+        SCRATCH.with(|scratch| {
+            *scratch.borrow_mut() = Some(SearchScratch::new(query.as_ref().len()));
+        });
 
         for item in self.lines.iter() {
             let score = match item.score(&query) {
@@ -217,79 +247,7 @@ impl LineInfo {
         }
     }
 
-    fn get_positions(&self, item: char, after: Option<usize>) -> Option<Vec<usize>> {
-        match after {
-            None => self.char_map.get(&item).map(|list| list.to_vec()),
-            Some(after) => {
-                self.char_map.get(&item).and_then(|list| {
-                    match list.binary_search(&after) {
-                        Ok(idx) if idx + 1 < list.len() => Some(list[idx + 1..].to_vec()),
-                        Err(idx) if idx < list.len() => Some(list[idx..].to_vec()),
-                        _ => None,
-                    }
-                })
-            }
-        }
-    }
-
-    fn position_list<T: AsRef<str>>(&self, item: T) -> Option<Vec<Vec<usize>>> {
-        let mut positions = vec![];
-        let mut last = None;
-
-        for c in item.as_ref().nfkc() {
-            if c.is_whitespace() {
-                // don't match whitespace
-                continue;
-            }
-
-            match self.get_positions(c, last) {
-                None => return None,
-                Some(list) => {
-                    last = match list.get(0) {
-                        None => return None,
-                        Some(idx) => Some(*idx),
-                    };
-                    positions.push(list);
-                }
-            }
-        }
-
-        Some(positions)
-    }
-
-    fn permute_positions(mut list: Vec<Vec<usize>>) -> Option<Vec<Vec<usize>>> {
-        let mut result = vec![];
-
-        trace!("Position list: {:?}", list);
-
-        match list.pop() {
-            None => return None,
-            Some(item) => {
-                for idx in item {
-                    result.push(vec![idx]);
-                }
-            }
-        }
-
-        for base_list in list.into_iter().rev() {
-            for list in result.iter_mut() {
-                let compare = *list.last().unwrap();
-                for item in base_list.iter().rev() {
-                    if *item < compare {
-                        list.push(*item);
-                    }
-                }
-            }
-        }
-
-        if result.is_empty() {
-            None
-        } else {
-            Some(result)
-        }
-    }
-
-    fn score_position(&self, position: Vec<usize>) -> f32 {
+    fn score_position(&self, position: &Vec<usize>) -> f32 {
         let avg_dist: f32;
 
         trace!("Scoring position: {:?}", position);
@@ -300,7 +258,7 @@ impl LineInfo {
             avg_dist = position.windows(2)
                                .map(|pair| {
                                    trace!("Window: {:?}", pair);
-                                   pair[0] as f32 - pair[1] as f32
+                                   pair[1] as f32 - pair[0] as f32
                                })
                                .sum::<f32>() / position.len() as f32;
         }
@@ -309,21 +267,121 @@ impl LineInfo {
                                     .map(|idx| self.heat_map[*idx])
                                     .sum();
 
+        trace!("dist: {:?}", avg_dist);
+        trace!("heat: {:?}", heat_sum);
+        trace!("factor: {:?}", self.factor);
+
         avg_dist * DIST_WEIGHT + heat_sum * HEAT_WEIGHT + self.factor * FACTOR_REDUCE
     }
 
-    fn best_position(&self, positions: Vec<Vec<usize>>) -> Option<f32> {
-        let mut scores = positions.into_iter()
-                                  .map(|position| self.score_position(position));
-
-        scores.next()
-              .map(|score| scores.fold(score, |acc, item| item.max(acc)))
+    fn score<T: AsRef<str>>(&self, query: T) -> Option<f32> {
+        SCRATCH.with(|scratch| {
+            self.score_inner(query, scratch.borrow_mut().as_mut().unwrap())
+        })
     }
 
-    fn score<T: AsRef<str>>(&self, query: T) -> Option<f32> {
-        self.position_list(query)
-            .and_then(|positions| LineInfo::permute_positions(positions))
-            .and_then(|positions| self.best_position(positions))
+    fn score_inner<T: AsRef<str>>(&self, query: T, scratch: &mut SearchScratch) -> Option<f32> {
+        let query = query.as_ref();
+        trace!("Line: {:?}", self.line);
+        trace!("Query: {:?}", query);
+
+        let &mut SearchScratch {ref mut position, ref mut state, ref mut lists} = scratch;
+
+        let mut idx: usize = 1;
+        let mut after: usize;
+        let mut score: Option<f32> = None;
+
+        lists.clear();
+        for ref ch in query.chars() {
+            match self.char_map.get(ch) {
+                Some(list) => {
+                    // transmute lifetime, because of thread-local storage
+                    // we clear the list at the end of the function, so these
+                    // references go away.
+                    lists.push(unsafe {mem::transmute(list)});
+                }
+                None => {
+                    return None;
+                }
+            }
+        }
+
+        // initialize the first element of the position
+        position[0] = 0;
+        after = lists[0][position[0]];
+
+        // create the first position
+        position[idx] = 0;
+        loop {
+            if idx >= position.len() {
+                trace!("position created");
+                break;
+            }
+
+            if lists[idx][position[idx]] > after {
+                after = lists[idx][position[idx]];
+                idx += 1;
+                // clear next position entry
+                if idx < position.len() {
+                    position[idx] = 0;
+                }
+            } else {
+                position[idx] += 1;
+                if position[idx] >= lists[idx].len() {
+                    trace!("non-matching");
+                    // non-matching query
+                    return None;
+                }
+            }
+        }
+
+        trace!("Starting scoring");
+
+        // try to find a score
+        'outer: loop {
+            if idx >= position.len() {
+                // read position
+                for idx in 0..query.len() {
+                    state[idx] = lists[idx][position[idx]];
+                }
+
+                // score postion
+                let new_score = self.score_position(&state);
+                score = score.map(|score| {
+                    if new_score > score {
+                        new_score
+                    } else {
+                        score
+                    }
+                }).or(Some(new_score));
+                // after should still be correct at this point
+                idx -= 1;
+            } else {
+                // try to increment this position
+                loop {
+                    position[idx] += 1;
+                    if position[idx] >= lists[idx].len() {
+                        if idx == 0 {
+                            // no more steps possible
+                            break 'outer;
+                        } else {
+                            // bump back
+                            position[idx] = 0;
+                            idx -= 1;
+                            after = lists[idx][position[idx]];
+                        }
+                    } else if lists[idx][position[idx]] > after {
+                        after = lists[idx][position[idx]];
+                        idx += 1;
+                        break;
+                    }
+                }
+            }
+        }
+
+        lists.clear();
+        trace!("Score: {:?}", score);
+        score
     }
 }
 
@@ -386,9 +444,9 @@ mod tests {
                                  ua",
                                 "aoeuaoeuahoeuaouaoeuoaeeuaoeuoaeuaoeulaoeuoaeuaoeulaoeuaoeuaoeuo\
                                  aoeuoaeuaoeu2aoeuoae"];
-        let mut test_set = Vec::with_capacity(100000);
+        let mut test_set = Vec::with_capacity(1000);
 
-        for _ in 0..100000 {
+        for _ in 0..1000 {
             let num = rng.gen::<usize>() % test_strings.len();
             test_set.push(test_strings[num].clone());
         }
