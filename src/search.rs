@@ -121,19 +121,22 @@ impl SearchBase {
     /// Matches any supersequence of the given query, with heuristics to order
     /// matches based on how close they are to the given query.
     pub fn query<T: AsRef<str>>(&self, query: T, number: usize) -> Vec<Arc<String>> {
-        if query.as_ref().is_empty() {
+        let query = query.as_ref();
+        if query.is_empty() {
             // an empty query means don't match anything
             return vec![];
         }
 
         let mut matches: BinaryHeap<LineMatch> = BinaryHeap::with_capacity(number);
 
+        let composed: Vec<char> = query.nfkc().collect();
+
         SCRATCH.with(|scratch| {
-            *scratch.borrow_mut() = Some(SearchScratch::new(query.as_ref().len()));
+            *scratch.borrow_mut() = Some(SearchScratch::new(composed.len()));
         });
 
         for item in self.lines.iter() {
-            let score = match item.score(&query) {
+            let score = match item.score(composed.iter()) {
                 None => {
                     // non-matching line
                     continue;
@@ -272,15 +275,11 @@ impl LineInfo {
         avg_dist * DIST_WEIGHT + heat_sum * HEAT_WEIGHT + self.factor * FACTOR_REDUCE
     }
 
-    fn score<T: AsRef<str>>(&self, query: T) -> Option<f32> {
+    fn score<'a, T: Iterator<Item=&'a char>>(&self, query: T) -> Option<f32> {
         SCRATCH.with(|scratch| self.score_inner(query, scratch.borrow_mut().as_mut().unwrap()))
     }
 
-    fn score_inner<T: AsRef<str>>(&self, query: T, scratch: &mut SearchScratch) -> Option<f32> {
-        let query = query.as_ref();
-        trace!("Line: {:?}", self.line);
-        trace!("Query: {:?}", query);
-
+    fn score_inner<'a, T: Iterator<Item=&'a char>>(&self, query: T, scratch: &mut SearchScratch) -> Option<f32> {
         let &mut SearchScratch {ref mut position, ref mut state, ref mut lists} = scratch;
 
         let mut idx: usize = 1;
@@ -288,7 +287,7 @@ impl LineInfo {
         let mut score: Option<f32> = None;
 
         lists.clear();
-        for ref ch in query.chars() {
+        for ref ch in query {
             match self.char_map.get(ch) {
                 Some(list) => {
                     // transmute lifetime, because of thread-local storage
@@ -337,7 +336,7 @@ impl LineInfo {
         'outer: loop {
             if idx >= position.len() {
                 // read position
-                for idx in 0..query.len() {
+                for idx in 0..position.len() {
                     state[idx] = lists[idx][position[idx]];
                 }
 
