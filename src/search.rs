@@ -275,11 +275,14 @@ impl LineInfo {
         avg_dist * DIST_WEIGHT + heat_sum * HEAT_WEIGHT + self.factor * FACTOR_REDUCE
     }
 
-    fn score<'a, T: Iterator<Item=&'a char>>(&self, query: T) -> Option<f32> {
+    fn score<'a, T: Iterator<Item = &'a char>>(&self, query: T) -> Option<f32> {
         SCRATCH.with(|scratch| self.score_inner(query, scratch.borrow_mut().as_mut().unwrap()))
     }
 
-    fn score_inner<'a, T: Iterator<Item=&'a char>>(&self, query: T, scratch: &mut SearchScratch) -> Option<f32> {
+    fn score_inner<'a, T: Iterator<Item = &'a char>>(&self,
+                                                     query: T,
+                                                     scratch: &mut SearchScratch)
+                                                     -> Option<f32> {
         let &mut SearchScratch {ref mut position, ref mut state, ref mut lists} = scratch;
 
         let mut idx: usize = 1;
