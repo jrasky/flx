@@ -23,7 +23,7 @@ thread_local!(static SCRATCH: RefCell<Option<SearchScratch>> = RefCell::new(None
 /// Contains the searchable database
 #[derive(Debug)]
 pub struct SearchBase {
-    lines: Vec<LineInfo>
+    lines: Vec<LineInfo>,
 }
 
 /// Parsed information about a line, ready to be searched by a SearchBase.
@@ -55,7 +55,7 @@ struct LineMatch {
 struct SearchScratch {
     position: Vec<usize>,
     state: Vec<usize>,
-    lists: Vec<&'static Vec<usize>>
+    lists: Vec<&'static Vec<usize>>,
 }
 
 impl Ord for LineMatch {
@@ -103,7 +103,7 @@ impl SearchScratch {
         SearchScratch {
             position: vec![0; size],
             state: vec![0; size],
-            lists: Vec::with_capacity(size)
+            lists: Vec::with_capacity(size),
         }
     }
 }
@@ -111,9 +111,7 @@ impl SearchScratch {
 impl SearchBase {
     /// Construct a new SearchBase from a Vec of LineInfos.
     pub fn new(lines: Vec<LineInfo>) -> SearchBase {
-        SearchBase { 
-            lines: lines
-        }
+        SearchBase { lines: lines }
     }
 
     /// Perform a query of the SearchBase.
@@ -275,9 +273,7 @@ impl LineInfo {
     }
 
     fn score<T: AsRef<str>>(&self, query: T) -> Option<f32> {
-        SCRATCH.with(|scratch| {
-            self.score_inner(query, scratch.borrow_mut().as_mut().unwrap())
-        })
+        SCRATCH.with(|scratch| self.score_inner(query, scratch.borrow_mut().as_mut().unwrap()))
     }
 
     fn score_inner<T: AsRef<str>>(&self, query: T, scratch: &mut SearchScratch) -> Option<f32> {
@@ -298,7 +294,7 @@ impl LineInfo {
                     // transmute lifetime, because of thread-local storage
                     // we clear the list at the end of the function, so these
                     // references go away.
-                    lists.push(unsafe {mem::transmute(list)});
+                    lists.push(unsafe { mem::transmute(list) });
                 }
                 None => {
                     return None;
@@ -348,12 +344,13 @@ impl LineInfo {
                 // score postion
                 let new_score = self.score_position(&state);
                 score = score.map(|score| {
-                    if new_score > score {
-                        new_score
-                    } else {
-                        score
-                    }
-                }).or(Some(new_score));
+                                 if new_score > score {
+                                     new_score
+                                 } else {
+                                     score
+                                 }
+                             })
+                             .or(Some(new_score));
                 // after should still be correct at this point
                 idx -= 1;
             } else {
