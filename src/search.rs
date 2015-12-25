@@ -255,9 +255,7 @@ impl LineInfo {
             avg_dist = 0.0;
         } else {
             avg_dist = position.windows(2)
-                               .map(|pair| {
-                                   pair[1] as f32 - pair[0] as f32
-                               })
+                               .map(|pair| pair[1] as f32 - pair[0] as f32)
                                .sum::<f32>() / position.len() as f32;
         }
 
