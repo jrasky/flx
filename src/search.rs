@@ -129,7 +129,7 @@ impl SearchBase {
 
         let mut matches: BinaryHeap<LineMatch> = BinaryHeap::with_capacity(number);
 
-        let composed: Vec<char> = query.nfkc().collect();
+        let composed: Vec<char> = query.nfkc().filter(|ch| !ch.is_whitespace()).collect();
 
         SCRATCH.with(|scratch| {
             *scratch.borrow_mut() = Some(SearchScratch::new(composed.len()));
@@ -284,17 +284,14 @@ impl LineInfo {
 
         lists.clear();
         for ref ch in query {
-            // don't match whitespace
-            if !ch.is_whitespace() {
-                match self.char_map.get(ch) {
-                    Some(list) => {
-                        // transmute lifetime, because of thread-local storage
-                        // we clear the list before use, so we're good anyways
-                        lists.push(unsafe { mem::transmute(list) });
-                    }
-                    None => {
-                        return None;
-                    }
+            match self.char_map.get(ch) {
+                Some(list) => {
+                    // transmute lifetime, because of thread-local storage
+                    // we clear the list before use, so we're good anyways
+                    lists.push(unsafe { mem::transmute(list) });
+                }
+                None => {
+                    return None;
                 }
             }
         }
