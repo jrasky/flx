@@ -122,8 +122,11 @@ impl SearchBase {
     /// matches based on how close they are to the given query.
     pub fn query<T: AsRef<str>>(&self, query: T, number: usize) -> Vec<Arc<String>> {
         let query = query.as_ref();
+
+        debug!("Query: {:?}", query);
+
         if query.is_empty() {
-            // an empty query means don't match anything
+            trace!("Not matching empty query");
             return vec![];
         }
 
@@ -285,8 +288,8 @@ impl LineInfo {
                                                      -> Option<f32> {
         let &mut SearchScratch {ref mut position, ref mut state, ref mut lists} = scratch;
 
-        let mut idx: usize = 1;
-        let mut after: usize;
+        let mut idx: usize = 0;
+        let mut after: usize = 0;
         let mut score: Option<f32> = None;
 
         lists.clear();
@@ -299,6 +302,7 @@ impl LineInfo {
                     lists.push(unsafe { mem::transmute(list) });
                 }
                 None => {
+                    lists.clear();
                     return None;
                 }
             }
@@ -306,28 +310,31 @@ impl LineInfo {
 
         // initialize the first element of the position
         position[0] = 0;
-        after = lists[0][position[0]];
+
+        trace!("Position: {:?}", position);
+        trace!("Lists: {:?}", lists);
 
         // create the first position
-        position[idx] = 0;
         loop {
-            if idx >= position.len() {
-                trace!("position created");
-                break;
-            }
-
-            if lists[idx][position[idx]] > after {
+            trace!("Index: {:?}", idx);
+            if lists[idx][position[idx]] > after || idx == 0 {
+                trace!("Advancing position");
                 after = lists[idx][position[idx]];
                 idx += 1;
                 // clear next position entry
-                if idx < position.len() {
+                if idx >= position.len() {
+                    trace!("Position created");
+                    break;
+                } else {
+                    trace!("Clearing");
                     position[idx] = 0;
                 }
             } else {
+                trace!("Incrementing");
                 position[idx] += 1;
                 if position[idx] >= lists[idx].len() {
-                    trace!("non-matching");
-                    // non-matching query
+                    trace!("non-matching query");
+                    lists.clear();
                     return None;
                 }
             }
@@ -406,6 +413,16 @@ mod tests {
         let result = base.query("abc", 1);
 
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_one_long() {
+        let test_strings = vec!["a", "b", "ab"];
+        let base = SearchBase::from_iter(test_strings);
+
+        let result = base.query("a", 1);
+
+        assert!(result.contains(&Arc::new("a".into())));
     }
 
     #[test]
