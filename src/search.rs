@@ -122,11 +122,8 @@ impl SearchBase {
     /// matches based on how close they are to the given query.
     pub fn query<T: AsRef<str>>(&self, query: T, number: usize) -> Vec<Arc<String>> {
         let query = query.as_ref();
-
-        debug!("Query: {:?}", query);
-
         if query.is_empty() {
-            trace!("Not matching empty query");
+            // non-matching query
             return vec![];
         }
 
@@ -254,14 +251,11 @@ impl LineInfo {
     fn score_position(&self, position: &Vec<usize>) -> f32 {
         let avg_dist: f32;
 
-        trace!("Scoring position: {:?}", position);
-
         if position.len() < 2 {
             avg_dist = 0.0;
         } else {
             avg_dist = position.windows(2)
                                .map(|pair| {
-                                   trace!("Window: {:?}", pair);
                                    pair[1] as f32 - pair[0] as f32
                                })
                                .sum::<f32>() / position.len() as f32;
@@ -270,10 +264,6 @@ impl LineInfo {
         let heat_sum: f32 = position.iter()
                                     .map(|idx| self.heat_map[*idx])
                                     .sum();
-
-        trace!("dist: {:?}", avg_dist);
-        trace!("heat: {:?}", heat_sum);
-        trace!("factor: {:?}", self.factor);
 
         avg_dist * DIST_WEIGHT + heat_sum * HEAT_WEIGHT + self.factor * FACTOR_REDUCE
     }
@@ -297,12 +287,10 @@ impl LineInfo {
             match self.char_map.get(ch) {
                 Some(list) => {
                     // transmute lifetime, because of thread-local storage
-                    // we clear the list at the end of the function, so these
-                    // references go away.
+                    // we clear the list before use, so we're good anyways
                     lists.push(unsafe { mem::transmute(list) });
                 }
                 None => {
-                    lists.clear();
                     return None;
                 }
             }
@@ -311,36 +299,24 @@ impl LineInfo {
         // initialize the first element of the position
         position[0] = 0;
 
-        trace!("Position: {:?}", position);
-        trace!("Lists: {:?}", lists);
-
         // create the first position
         loop {
-            trace!("Index: {:?}", idx);
             if lists[idx][position[idx]] > after || idx == 0 {
-                trace!("Advancing position");
                 after = lists[idx][position[idx]];
                 idx += 1;
                 // clear next position entry
                 if idx >= position.len() {
-                    trace!("Position created");
                     break;
                 } else {
-                    trace!("Clearing");
                     position[idx] = 0;
                 }
             } else {
-                trace!("Incrementing");
                 position[idx] += 1;
                 if position[idx] >= lists[idx].len() {
-                    trace!("non-matching query");
-                    lists.clear();
                     return None;
                 }
             }
         }
-
-        trace!("Starting scoring");
 
         // try to find a score
         'outer: loop {
@@ -385,8 +361,6 @@ impl LineInfo {
             }
         }
 
-        lists.clear();
-        trace!("Score: {:?}", score);
         score
     }
 }
