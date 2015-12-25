@@ -132,7 +132,26 @@ impl SearchBase {
         let composed: Vec<char> = query.nfkc().filter(|ch| !ch.is_whitespace()).collect();
 
         SCRATCH.with(|scratch| {
-            *scratch.borrow_mut() = Some(SearchScratch::new(composed.len()));
+            let mut borrow = scratch.borrow_mut();
+
+            if borrow.is_none() {
+                *borrow = Some(SearchScratch::new(composed.len()));
+            } else {
+                let &mut SearchScratch {ref mut position, ref mut state, lists: _} =
+                    borrow.as_mut().unwrap();
+
+                position.truncate(composed.len());
+                state.truncate(composed.len());
+
+                if position.len() < composed.len() {
+                    let diff = composed.len() - position.len();
+                    position.reserve(diff);
+                    for _ in 0..diff {
+                        position.push(0);
+                        state.push(0);
+                    }
+                }
+            }
         });
 
         for item in self.lines.iter() {
