@@ -284,14 +284,17 @@ impl LineInfo {
 
         lists.clear();
         for ref ch in query {
-            match self.char_map.get(ch) {
-                Some(list) => {
-                    // transmute lifetime, because of thread-local storage
-                    // we clear the list before use, so we're good anyways
-                    lists.push(unsafe { mem::transmute(list) });
-                }
-                None => {
-                    return None;
+            // don't match whitespace
+            if !ch.is_whitespace() {
+                match self.char_map.get(ch) {
+                    Some(list) => {
+                        // transmute lifetime, because of thread-local storage
+                        // we clear the list before use, so we're good anyways
+                        lists.push(unsafe { mem::transmute(list) });
+                    }
+                    None => {
+                        return None;
+                    }
                 }
             }
         }
