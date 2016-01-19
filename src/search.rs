@@ -267,6 +267,20 @@ impl LineInfo {
         }
     }
 
+    /// Sets the factor for the line info
+    ///
+    /// Changes the factor after the creation of the line
+    pub fn set_factor(&mut self, factor: f32) {
+        self.factor = factor;
+    }
+
+    /// Gets the factor for the line info
+    ///
+    /// Produces the factor for the line info
+    pub fn get_factor(&self) -> f32 {
+        self.factor
+    }
+
     fn score_position(&self, position: &Vec<usize>) -> f32 {
         let avg_dist: f32;
 
