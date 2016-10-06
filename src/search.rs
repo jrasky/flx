@@ -9,7 +9,6 @@ use std::cmp::Ordering;
 use std::iter::FromIterator;
 use std::sync::Arc;
 use std::cell::RefCell;
-use std::borrow::BorrowMut;
 
 use unicode_normalization::UnicodeNormalization;
 
@@ -172,7 +171,8 @@ impl SearchBase {
             if matches.len() < number {
                 matches.push(match_item);
             } else if &match_item < matches.peek().unwrap() {
-                matches.push_pop(match_item);
+                // the heap should have items in it if its len is > 0
+                *matches.peek_mut().unwrap() = match_item;
             }
         }
 
