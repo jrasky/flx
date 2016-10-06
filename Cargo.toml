@@ -8,6 +8,7 @@ homepage = "https://github.com/jrasky/flx"
 readme = "README.md"
 keywords = ["search", "fuzzy", "string"]
 license = "MIT/Apache-2.0"
+documentation = "https://docs.rs/flx"
 
 [dependencies]
 log = "0.3"
