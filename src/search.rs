@@ -9,7 +9,6 @@ use std::cmp::Ordering;
 use std::iter::FromIterator;
 use std::sync::Arc;
 use std::cell::RefCell;
-use std::borrow::BorrowMut;
 
 use unicode_normalization::UnicodeNormalization;
 
@@ -171,8 +170,13 @@ impl SearchBase {
 
             if matches.len() < number {
                 matches.push(match_item);
-            } else if &match_item < matches.peek().unwrap() {
-                matches.push_pop(match_item);
+            } else if let Some(mut other_item) = matches.peek_mut() {
+                if &match_item < &*other_item {
+                    // replace the "greatest" item with ours
+                    *other_item = match_item;
+                }
+            } else {
+                unreachable!("No item to peek at, but number of items greater than zero");
             }
         }
 
