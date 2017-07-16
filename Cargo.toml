@@ -1,6 +1,6 @@
 [package]
 name = "flx"
-version = "0.1.1"
+version = "0.2.0"
 authors = ["Jerome Rasky <jyrome.112@gmail.com>"]
 description = "Full-text searching and scoring of strings"
 repository = "https://github.com/jrasky/flx"
@@ -11,8 +11,6 @@ license = "MIT/Apache-2.0"
 documentation = "https://docs.rs/flx"
 
 [dependencies]
-log = "0.3"
-env_logger = "0.3"
 unicode-normalization = "0.1"
 
 [dev-dependencies]

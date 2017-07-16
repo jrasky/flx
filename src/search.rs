@@ -7,17 +7,10 @@
 use std::collections::{HashMap, BinaryHeap};
 use std::cmp::Ordering;
 use std::iter::FromIterator;
-use std::sync::Arc;
-use std::cell::RefCell;
 
 use unicode_normalization::UnicodeNormalization;
 
-use std::mem;
-
 use constants::*;
-
-// thread-local scratch area
-thread_local!(static SCRATCH: RefCell<Option<SearchScratch>> = RefCell::new(None));
 
 /// Contains the searchable database
 #[derive(Debug)]
@@ -28,7 +21,7 @@ pub struct SearchBase {
 /// Parsed information about a line, ready to be searched by a SearchBase.
 #[derive(Debug)]
 pub struct LineInfo {
-    line: Arc<String>,
+    line: String,
     char_map: HashMap<char, Vec<usize>>,
     heat_map: Vec<f32>,
     factor: f32,
@@ -44,20 +37,13 @@ enum CharClass {
 }
 
 #[derive(Debug)]
-struct LineMatch {
+struct LineMatch<'a> {
     score: f32,
     factor: f32,
-    line: Arc<String>,
+    line: &'a str,
 }
 
-#[derive(Debug)]
-struct SearchScratch {
-    position: Vec<usize>,
-    state: Vec<usize>,
-    lists: Vec<&'static Vec<usize>>,
-}
-
-impl Ord for LineMatch {
+impl<'a> Ord for LineMatch<'a> {
     fn cmp(&self, other: &LineMatch) -> Ordering {
         match self.score.partial_cmp(&other.score) {
             Some(Ordering::Equal) | None => {
@@ -70,19 +56,19 @@ impl Ord for LineMatch {
     }
 }
 
-impl PartialOrd for LineMatch {
+impl<'a> PartialOrd for LineMatch<'a> {
     fn partial_cmp(&self, other: &LineMatch) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl PartialEq for LineMatch {
+impl<'a> PartialEq for LineMatch<'a> {
     fn eq(&self, other: &LineMatch) -> bool {
         self.cmp(other) == Ordering::Equal
     }
 }
 
-impl Eq for LineMatch {}
+impl<'a> Eq for LineMatch<'a> {}
 
 /// Creates a LineInfo object with a factor of zero
 impl<T: Into<String>> From<T> for LineInfo {
@@ -94,16 +80,6 @@ impl<T: Into<String>> From<T> for LineInfo {
 impl<V: Into<LineInfo>> FromIterator<V> for SearchBase {
     fn from_iter<T: IntoIterator<Item = V>>(iterator: T) -> SearchBase {
         SearchBase::new(iterator.into_iter().map(|item| item.into()).collect())
-    }
-}
-
-impl SearchScratch {
-    fn new(size: usize) -> SearchScratch {
-        SearchScratch {
-            position: vec![0; size],
-            state: vec![0; size],
-            lists: Vec::with_capacity(size),
-        }
     }
 }
 
@@ -119,7 +95,7 @@ impl SearchBase {
     ///
     /// Matches any supersequence of the given query, with heuristics to order
     /// matches based on how close they are to the given query.
-    pub fn query<T: AsRef<str>>(&self, query: T, number: usize) -> Vec<Arc<String>> {
+    pub fn query<'a, T: AsRef<str>>(&'a self, query: T, number: usize) -> Vec<&'a str> {
         let query = query.as_ref();
         if query.is_empty() {
             // non-matching query
@@ -130,31 +106,8 @@ impl SearchBase {
 
         let composed: Vec<char> = query.nfkc().filter(|ch| !ch.is_whitespace()).collect();
 
-        SCRATCH.with(|scratch| {
-            let mut borrow = scratch.borrow_mut();
-
-            if borrow.is_none() {
-                *borrow = Some(SearchScratch::new(composed.len()));
-            } else {
-                let &mut SearchScratch {ref mut position, ref mut state, lists: _} =
-                    borrow.as_mut().unwrap();
-
-                position.truncate(composed.len());
-                state.truncate(composed.len());
-
-                if position.len() < composed.len() {
-                    let diff = composed.len() - position.len();
-                    position.reserve(diff);
-                    for _ in 0..diff {
-                        position.push(0);
-                        state.push(0);
-                    }
-                }
-            }
-        });
-
         for item in self.lines.iter() {
-            let score = match item.score(composed.iter()) {
+            let score = match item.score(&composed) {
                 None => {
                     // non-matching line
                     continue;
@@ -165,7 +118,7 @@ impl SearchBase {
             let match_item = LineMatch {
                 score: -score,
                 factor: -item.factor,
-                line: item.line.clone(),
+                line: &item.line,
             };
 
             if matches.len() < number {
@@ -193,14 +146,14 @@ impl LineInfo {
     pub fn new<T: Into<String>>(item: T, factor: f32) -> LineInfo {
         let mut map: HashMap<char, Vec<usize>> = HashMap::new();
         let mut heat = vec![];
-        let line = Arc::new(item.into());
+        let line = item.into();
 
         let mut ws_score: f32 = 0.0;
         let mut cs_score: f32 = 0.0;
         let mut cur_class = CharClass::First;
         let mut cs_change = false;
 
-        for (idx, c) in line.as_ref().nfkc().enumerate() {
+        for (idx, c) in line.nfkc().enumerate() {
             if idx > MAX_LEN {
                 break;
             }
@@ -285,7 +238,7 @@ impl LineInfo {
         self.factor
     }
 
-    fn score_position(&self, position: &Vec<usize>) -> f32 {
+    fn score_position(&self, position: &[usize]) -> f32 {
         let avg_dist: f32;
 
         if position.len() < 2 {
@@ -303,27 +256,19 @@ impl LineInfo {
         avg_dist * DIST_WEIGHT + heat_sum * HEAT_WEIGHT + self.factor * FACTOR_REDUCE
     }
 
-    fn score<'a, T: Iterator<Item = &'a char>>(&self, query: T) -> Option<f32> {
-        SCRATCH.with(|scratch| self.score_inner(query, scratch.borrow_mut().as_mut().unwrap()))
-    }
-
-    fn score_inner<'a, T: Iterator<Item = &'a char>>(&self,
-                                                     query: T,
-                                                     scratch: &mut SearchScratch)
-                                                     -> Option<f32> {
-        let &mut SearchScratch {ref mut position, ref mut state, ref mut lists} = scratch;
-
+    fn score<'a>(&self, query: &'a[char]) -> Option<f32> {
         let mut idx: usize = 0;
         let mut after: usize = 0;
         let mut score: Option<f32> = None;
 
-        lists.clear();
+        let mut lists = Vec::with_capacity(query.len());
+        let mut position = vec![0; query.len()];
+        let mut state = vec![0; query.len()];
+
         for ref ch in query {
             match self.char_map.get(ch) {
                 Some(list) => {
-                    // transmute lifetime, because of thread-local storage
-                    // we clear the list before use, so we're good anyways
-                    lists.push(unsafe { mem::transmute(list) });
+                    lists.push(list);
                 }
                 None => {
                     return None;
@@ -403,7 +348,6 @@ impl LineInfo {
 #[cfg(test)]
 mod tests {
     use std::iter::FromIterator;
-    use std::sync::Arc;
 
     use rand::Rng;
 
@@ -431,7 +375,7 @@ mod tests {
 
         let result = base.query("a", 1);
 
-        assert!(result.contains(&Arc::new("a".into())));
+        assert!(result.contains(&"a"));
     }
 
     #[test]
@@ -443,9 +387,9 @@ mod tests {
         // search
         let result = base.query("hello", 3);
 
-        assert!(result.contains(&Arc::new("hello".into())));
-        assert!(result.contains(&Arc::new("hello2".into())));
-        assert!(!result.contains(&Arc::new("test".into())));
+        assert!(result.contains(&"hello"));
+        assert!(result.contains(&"hello2"));
+        assert!(!result.contains(&"test"));
     }
 
     #[test]
@@ -457,7 +401,7 @@ mod tests {
         let result = base.query("tt", 1);
 
         assert_eq!(result.len(), 1);
-        assert!(result.contains(&Arc::new("test".into())));
+        assert!(result.contains(&"test"));
     }
 
     #[bench]

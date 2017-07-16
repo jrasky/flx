@@ -5,9 +5,6 @@
 // or http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 #![cfg_attr(test, feature(test))]
-#[macro_use]
-extern crate log;
-extern crate env_logger;
 extern crate unicode_normalization;
 #[cfg(test)]
 extern crate rand;
