@@ -277,7 +277,7 @@ impl LineInfo {
     }
 
     fn score_inner<'a>(&self, query: &'a [char], position: &mut [usize], idx: usize, lists: &[&[usize]]) -> Option<f32> {
-        if idx + 1 == query.len() {
+        if idx == query.len() {
             Some(self.score_position(position))
         } else {
             let mut best = None;
@@ -359,6 +359,16 @@ mod tests {
 
         assert_eq!(result.len(), 1);
         assert!(result.contains(&"test"));
+    }
+
+    #[test]
+    fn test_order() {
+        let test_strings = vec!["abc", "def"];
+        let base = SearchBase::from_iter(test_strings);
+
+        let result = base.query("cb", 1);
+
+        assert_eq!(result.len(), 0);
     }
 
     #[bench]
