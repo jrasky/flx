@@ -256,92 +256,49 @@ impl LineInfo {
         avg_dist * DIST_WEIGHT + heat_sum * HEAT_WEIGHT + self.factor * FACTOR_REDUCE
     }
 
-    fn score<'a>(&self, query: &'a[char]) -> Option<f32> {
-        let mut idx: usize = 0;
-        let mut after: usize = 0;
-        let mut score: Option<f32> = None;
-
-        let mut lists = Vec::with_capacity(query.len());
+    fn score<'a>(&self, query: &'a [char]) -> Option<f32> {
         let mut position = vec![0; query.len()];
-        let mut state = vec![0; query.len()];
 
-        for ref ch in query {
-            match self.char_map.get(ch) {
-                Some(list) => {
-                    lists.push(list);
-                }
-                None => {
-                    return None;
-                }
+        let mut lists: Vec<&[usize]> = Vec::with_capacity(query.len());
+
+        if query.iter().any(|ch| {
+            if let Some(list) = self.char_map.get(ch) {
+                // Use a side effect here to save time
+                lists.push(list);
+                false
+            } else {
+                true
             }
+        }) {
+            return None;
         }
 
-        // initialize the first element of the position
-        position[0] = 0;
+        self.score_inner(query, &mut position, 0, &lists)
+    }
 
-        // create the first position
-        loop {
-            if lists[idx][position[idx]] > after || idx == 0 {
-                after = lists[idx][position[idx]];
-                idx += 1;
-                // clear next position entry
-                if idx >= position.len() {
-                    break;
-                } else {
-                    position[idx] = 0;
-                }
-            } else {
-                position[idx] += 1;
-                if position[idx] >= lists[idx].len() {
-                    return None;
-                }
-            }
-        }
+    fn score_inner<'a>(&self, query: &'a [char], position: &mut [usize], idx: usize, lists: &[&[usize]]) -> Option<f32> {
+        if idx + 1 == query.len() {
+            Some(self.score_position(position))
+        } else {
+            let mut best = None;
 
-        // try to find a score
-        'outer: loop {
-            if idx >= position.len() {
-                // read position
-                for idx in 0..position.len() {
-                    state[idx] = lists[idx][position[idx]];
+            for sub_position in lists[idx].iter() {
+                if idx > 0 && *sub_position <= position[idx - 1] {
+                    // not a valid position
+                    continue;
                 }
 
-                // score postion
-                let new_score = self.score_position(&state);
-                score = score.map(|score| {
-                                 if new_score > score {
-                                     new_score
-                                 } else {
-                                     score
-                                 }
-                             })
-                             .or(Some(new_score));
-                // after should still be correct at this point
-                idx -= 1;
-            } else {
-                // try to increment this position
-                loop {
-                    position[idx] += 1;
-                    if position[idx] >= lists[idx].len() {
-                        if idx == 0 {
-                            // no more steps possible
-                            break 'outer;
-                        } else {
-                            // bump back
-                            position[idx] = 0;
-                            idx -= 1;
-                            after = lists[idx][position[idx]];
-                        }
-                    } else if lists[idx][position[idx]] > after {
-                        after = lists[idx][position[idx]];
-                        idx += 1;
-                        break;
+                position[idx] = *sub_position;
+
+                if let Some(score) = self.score_inner(query, position, idx + 1, lists) {
+                    if score > best.unwrap_or(::std::f32::NEG_INFINITY) {
+                        best = Some(score);
                     }
                 }
             }
-        }
 
-        score
+            best
+        }
     }
 }
 
