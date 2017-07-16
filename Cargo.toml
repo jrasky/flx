@@ -1,6 +1,6 @@
 [package]
 name = "flx"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Jerome Rasky <jyrome.112@gmail.com>"]
 description = "Full-text searching and scoring of strings"
 repository = "https://github.com/jrasky/flx"
